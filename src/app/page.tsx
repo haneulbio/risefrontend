@@ -108,10 +108,6 @@ export default function Page() {
             <div className="mx-auto max-w-5xl px-6 py-10">
                 <header className="mb-8 flex items-start justify-between gap-4">
                     <div>
-                        <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
-                            <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                            Workplace Demo
-                        </div>
                         <h1 className="mt-3 text-3xl font-bold tracking-tight">
                             Scout & Verify
                             <span className="ml-2 text-amber-300">Influencer Finder</span>
