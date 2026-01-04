@@ -42,18 +42,28 @@ export default function ResultsPage() {
     }, [scoutIdFromQuery]);
 
     // Fetch scout
+    // Fetch scout
     useEffect(() => {
         if (!scoutId) return;
 
+        const id = scoutId;
         let mounted = true;
+
         async function load() {
             setError(null);
             setLoading(true);
             try {
-                const d = await getScout(scoutId);
+                const d = await getScout(id);
                 if (!mounted) return;
                 setData(d);
-                pushRecentScout({ id: d.id, status: d.status, prompt: d.prompt, intent: d.intent, createdAt: d.createdAt, updatedAt: d.updatedAt });
+                pushRecentScout({
+                    id: d.id,
+                    status: d.status,
+                    prompt: d.prompt,
+                    intent: d.intent,
+                    createdAt: d.createdAt,
+                    updatedAt: d.updatedAt,
+                });
             } catch (e: any) {
                 if (!mounted) return;
                 setError(e?.message ?? "Unknown error");
@@ -62,11 +72,13 @@ export default function ResultsPage() {
                 setLoading(false);
             }
         }
+
         load();
         return () => {
             mounted = false;
         };
     }, [scoutId]);
+
 
     const results = useMemo<MatchResult[]>(() => data?.results ?? [], [data]);
 
