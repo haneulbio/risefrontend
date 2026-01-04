@@ -39,7 +39,7 @@ export default function ReportsPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <div className="text-xs font-bold uppercase tracking-wide text-amber-200/80">Reports</div>
-                    <h1 className="mt-2 text-2xl font-extrabold">Recent Reports (local)</h1>
+                    <h1 className="mt-2 text-2xl font-extrabold">Recent Reports</h1>
                     <p className="mt-2 text-sm text-white/60">PDF 생성 기록을 여기서 다시 다운로드할 수 있어요.</p>
                 </div>
                 <Link href="/" className="rounded-2xl bg-amber-400 px-5 py-3 text-sm font-extrabold text-neutral-950">

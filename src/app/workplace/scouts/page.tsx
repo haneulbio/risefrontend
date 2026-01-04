@@ -25,7 +25,7 @@ export default function ScoutsPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <div className="text-xs font-bold uppercase tracking-wide text-amber-200/80">Scouts</div>
-                    <h1 className="mt-2 text-2xl font-extrabold">All Scouts (local)</h1>
+                    <h1 className="mt-2 text-2xl font-extrabold">All Scouts</h1>
                     <p className="mt-2 text-sm text-white/60">
                         스카웃 리스트
                     </p>
