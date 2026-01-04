@@ -20,7 +20,7 @@ function joinUrl(base: string, path: string) {
 }
 
 async function apiFetch(path: string, init: RequestInit = {}, opts?: { allowStatuses?: number[] }) {
-    const url = path;
+    const url = proxied(path);
 
     const headers = new Headers(init.headers);
     if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
