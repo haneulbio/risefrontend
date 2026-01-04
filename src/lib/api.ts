@@ -1,9 +1,7 @@
 // src/lib/api.ts
 import type {
     ScoutDetail,
-    CreateScoutResponse,
-    CreateReportResponse,
-    InfluencerReportDetail, ScoutSummary,
+    CreateReportResponse, ScoutSummary,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE;
@@ -69,7 +67,7 @@ export async function authMe() {
 
 
 // Scout 생성
-export async function createScout(prompt: string): Promise<CreateScoutResponse> {
+export async function createScout(prompt: string): Promise<ScoutSummary> {
     const res = await apiFetch("/api/workplace/scouts", {
         method: "POST",
         body: JSON.stringify({ prompt }),
@@ -104,17 +102,6 @@ export async function downloadReportPdfById(reportId: string): Promise<Blob> {
 }
 
 
-// Influencer 상세 리포트
-export async function getInfluencerReportDetail(
-    scoutId: string,
-    username: string
-): Promise<InfluencerReportDetail> {
-    const res = await apiFetch(
-        `/api/workplace/scouts/${encodeURIComponent(scoutId)}/influencers/${encodeURIComponent(username)}`,
-        { method: "GET" }
-    );
-    return res.json();
-}
 
 export async function authRegister(username: string, password: string) {
     const res = await apiFetch("/api/auth/register", {
