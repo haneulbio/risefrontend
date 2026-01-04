@@ -4,7 +4,12 @@ import type {
     CreateReportResponse, ScoutSummary,
 } from "./types";
 
-const BASE = process.env.NEXT_PUBLIC_API_BASE;
+const BASE = "";
+const PROXY_PREFIX = "/api/proxy";
+
+function proxied(path: string) {
+    return `${PROXY_PREFIX}${path.startsWith("/") ? "" : "/"}${path}`;
+}
 
 if (!BASE) {
     console.warn("NEXT_PUBLIC_API_BASE is not set. Did you create .env.local?");
@@ -15,7 +20,7 @@ function joinUrl(base: string, path: string) {
 }
 
 async function apiFetch(path: string, init: RequestInit = {}, opts?: { allowStatuses?: number[] }) {
-    const url = joinUrl(BASE ?? "", path);
+    const url = proxied(path);
 
     const headers = new Headers(init.headers);
     if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
