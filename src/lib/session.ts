@@ -1,17 +1,13 @@
-import type { SearchResponse } from "./types";
+const KEY = "rise:lastScoutId";
 
-const KEY = "rise:lastSearch";
-
-export function saveLastSearch(data: SearchResponse) {
-    sessionStorage.setItem(KEY, JSON.stringify(data));
+export function saveLastScoutId(id: string) {
+    sessionStorage.setItem(KEY, id);
 }
 
-export function loadLastSearch(): SearchResponse | null {
-    const raw = sessionStorage.getItem(KEY);
-    if (!raw) return null;
-    try {
-        return JSON.parse(raw) as SearchResponse;
-    } catch {
-        return null;
-    }
+export function loadLastScoutId(): string | null {
+    return sessionStorage.getItem(KEY);
+}
+
+export function clearLastScoutId() {
+    sessionStorage.removeItem(KEY);
 }

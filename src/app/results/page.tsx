@@ -2,39 +2,107 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { downloadReportPdf } from "@/lib/api";
-import { loadLastSearch } from "@/lib/session";
-import type { SearchResponse, MatchResult } from "@/lib/types";
+import { useSearchParams } from "next/navigation";
+import { createReport, downloadReportPdfById, getScout } from "@/lib/api";
+import { loadLastScoutId, saveLastScoutId } from "@/lib/session";
+import type { MatchResult, ScoutDetail } from "@/lib/types";
+import {pushRecentScout} from "@/lib/recent";
+import {pushRecentReport} from "@/lib/reports_recent";
 
 function formatNum(n: number) {
     return new Intl.NumberFormat().format(n);
 }
 
+function Pill({ children }: { children: React.ReactNode }) {
+    return (
+        <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
+      {children}
+    </span>
+    );
+}
+
 export default function ResultsPage() {
-    const [data, setData] = useState<SearchResponse | null>(null);
+    const sp = useSearchParams();
+    const scoutIdFromQuery = sp.get("scoutId");
+
+    const [scoutId, setScoutId] = useState<string | null>(null);
+    const [data, setData] = useState<ScoutDetail | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
+
     const [busyPdf, setBusyPdf] = useState(false);
 
+    // Resolve scoutId
     useEffect(() => {
-        const d = loadLastSearch();
-        setData(d);
-    }, []);
+        const id = scoutIdFromQuery || loadLastScoutId();
+        if (id) {
+            setScoutId(id);
+            saveLastScoutId(id);
+        }
+    }, [scoutIdFromQuery]);
 
-    const prompt = data?.prompt ?? "";
-    const intent = data?.intent;
+    // Fetch scout
+    useEffect(() => {
+        if (!scoutId) return;
+
+        let mounted = true;
+        async function load() {
+            setError(null);
+            setLoading(true);
+            try {
+                const d = await getScout(scoutId);
+                if (!mounted) return;
+                setData(d);
+                pushRecentScout({ id: d.id, status: d.status, prompt: d.prompt, intent: d.intent, createdAt: d.createdAt, updatedAt: d.updatedAt });
+            } catch (e: any) {
+                if (!mounted) return;
+                setError(e?.message ?? "Unknown error");
+            } finally {
+                if (!mounted) return;
+                setLoading(false);
+            }
+        }
+        load();
+        return () => {
+            mounted = false;
+        };
+    }, [scoutId]);
+
     const results = useMemo<MatchResult[]>(() => data?.results ?? [], [data]);
 
+    async function onRefresh() {
+        if (!scoutId) return;
+        setError(null);
+        setLoading(true);
+        try {
+            const d = await getScout(scoutId);
+            setData(d);
+        } catch (e: any) {
+            setError(e?.message ?? "Unknown error");
+        } finally {
+            setLoading(false);
+        }
+    }
+
     async function onDownloadPdf() {
-        if (!prompt) return;
+        if (!scoutId) return;
         setError(null);
         setBusyPdf(true);
         try {
-            const blob = await downloadReportPdf(prompt);
-            const url = URL.createObjectURL(blob);
+            // 1) create report (server builds PDF)
+            const r = await createReport(scoutId);
+            pushRecentReport({
+                reportId: r.reportId,
+                scoutId: r.scoutId,
+                createdAt: r.createdAt,
+            });
+            // 2) download by report id
+            const blob = await downloadReportPdfById(r.reportId);
 
+            const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = "rise_demo_report.pdf";
+            a.download = `rise_report_${r.reportId}.pdf`;
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -46,24 +114,17 @@ export default function ResultsPage() {
         }
     }
 
-    if (!data) {
+    if (!scoutId) {
         return (
-            <main className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-yellow-50">
-                <div className="mx-auto max-w-4xl px-6 py-20 text-center">
-                    <div className="mb-6 inline-block rounded-full bg-gradient-to-br from-amber-400 to-yellow-500 p-4 shadow-xl shadow-amber-500/30">
-                        <svg className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                    </div>
-                    <h1 className="text-3xl font-bold text-gray-900">No Results Found</h1>
-                    <p className="mt-3 text-base text-gray-600">
-                        Start a new search to discover influencers.
-                    </p>
+            <main className="min-h-screen bg-neutral-950 text-neutral-100">
+                <div className="mx-auto max-w-3xl px-6 py-20 text-center">
+                    <h1 className="text-2xl font-bold">No Scout</h1>
+                    <p className="mt-2 text-sm text-white/60">홈에서 Scout를 먼저 생성해 주세요.</p>
                     <Link
-                        className="mt-8 inline-block rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-500 px-8 py-3 text-sm font-bold text-white shadow-lg shadow-amber-500/30 transition-all hover:shadow-xl hover:shadow-amber-500/40"
+                        className="mt-8 inline-flex rounded-2xl bg-amber-400 px-6 py-3 text-sm font-extrabold text-neutral-950"
                         href="/"
                     >
-                        Start New Search
+                        Back
                     </Link>
                 </div>
             </main>
@@ -71,164 +132,227 @@ export default function ResultsPage() {
     }
 
     return (
-        <main className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-yellow-50">
+        <main className="min-h-screen bg-gradient-to-br from-neutral-950 via-neutral-950 to-amber-950/30 text-neutral-100">
             <div className="mx-auto max-w-6xl px-6 py-10">
-                <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                        <div className="mb-2 inline-block rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 px-3 py-1">
-                            <span className="text-xs font-bold tracking-wide text-white">RESULTS</span>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Pill>Workplace</Pill>
+                            <Pill>Scout</Pill>
+                            {data?.status && <Pill>Status: {data.status}</Pill>}
                         </div>
-                        <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-                            Top 10 Influencers
+
+                        <h1 className="mt-3 text-3xl font-bold tracking-tight">
+                            Results
+                            <span className="ml-2 text-amber-300">Top Matches</span>
                         </h1>
-                        <p className="mt-2 text-sm text-gray-600">
-                            Matched based on your criteria and preferences
+                        <p className="mt-2 text-sm text-white/70">
+                            ScoutId: <span className="font-mono text-white/80">{scoutId}</span>
                         </p>
                     </div>
 
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap gap-3">
                         <Link
-                            className="rounded-2xl border-2 border-gray-200 bg-white px-6 py-3 text-sm font-semibold text-gray-700 shadow-sm transition-all hover:border-amber-300 hover:shadow-md"
+                            className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white/80 hover:bg-white/10"
                             href="/"
                         >
-                            New Search
+                            New Scout
                         </Link>
+
+                        <Link
+                            className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white/80 hover:bg-white/10"
+                            href="/workplace/scouts"
+                        >
+                            Scouts
+                        </Link>
+
+                        <Link
+                            className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white/80 hover:bg-white/10"
+                            href="/workplace/reports"
+                        >
+                            Reports
+                        </Link>
+
+                        <Link
+                            className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white/80 hover:bg-white/10"
+                            href="/workplace/settings"
+                        >
+                            Settings
+                        </Link>
+
                         <button
-                            className="group rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-500 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-amber-500/30 transition-all hover:shadow-xl hover:shadow-amber-500/40 disabled:opacity-50 disabled:shadow-none"
+                            className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white/80 hover:bg-white/10 disabled:opacity-50"
+                            onClick={onRefresh}
+                            disabled={loading}
+                        >
+                            {loading ? "Refreshing…" : "Refresh"}
+                        </button>
+
+                        <button
+                            className="rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-500 px-6 py-3 text-sm font-extrabold text-neutral-950 shadow-lg shadow-amber-500/20 disabled:opacity-50"
                             onClick={onDownloadPdf}
-                            disabled={busyPdf || !prompt}
-                            title={!prompt ? "Missing prompt in session storage" : undefined}
+                            disabled={busyPdf || loading || data?.status !== "DONE"}
+                            title={data?.status !== "DONE" ? "DONE 상태일 때 다운로드 가능" : undefined}
                         >
                             {busyPdf ? (
                                 <span className="flex items-center gap-2">
-                                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
-                                    Building
-                                </span>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-950 border-t-transparent" />
+                  Building PDF…
+                </span>
                             ) : (
-                                <span className="flex items-center gap-2">
-                                    <svg className="h-4 w-4 transition-transform group-hover:translate-y-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                    Download PDF
-                                </span>
+                                "Download PDF"
                             )}
                         </button>
                     </div>
                 </header>
 
                 {error && (
-                    <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 shadow-sm">
+                    <div className="mb-6 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm text-red-100">
                         {error}
                     </div>
                 )}
 
-                <section className="mb-8 rounded-3xl border border-amber-200/50 bg-white p-6 shadow-lg shadow-amber-500/5">
-                    <h2 className="text-sm font-bold uppercase tracking-wide text-amber-600">
-                        Your Prompt
-                    </h2>
-                    <p className="mt-2 text-base font-medium text-gray-900">{prompt}</p>
+                {/* Prompt + Intent */}
+                <section className="mb-6 rounded-3xl border border-white/10 bg-white/5 p-6">
+                    <div className="text-xs font-bold uppercase tracking-wide text-amber-200/80">
+                        Prompt
+                    </div>
+                    <p className="mt-2 text-base font-semibold text-white/90">
+                        {data?.prompt ?? "(loading...)"}
+                    </p>
 
-                    <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        <div className="rounded-2xl bg-gradient-to-br from-amber-50 to-yellow-50 p-4 border border-amber-100">
-                            <div className="text-xs font-bold uppercase tracking-wide text-amber-700">
-                                Followers
-                            </div>
-                            <div className="mt-2 text-lg font-bold text-gray-900">
-                                {intent?.minFollowers ?? "N/A"} ~ {intent?.maxFollowers ?? "N/A"}
+                    <div className="mt-5 grid gap-4 md:grid-cols-4">
+                        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                            <div className="text-xs font-bold text-white/60">Followers</div>
+                            <div className="mt-2 text-lg font-extrabold">
+                                {data?.intent?.minFollowers ?? "N/A"} ~ {data?.intent?.maxFollowers ?? "N/A"}
                             </div>
                         </div>
 
-                        <div className="rounded-2xl bg-gradient-to-br from-amber-50 to-yellow-50 p-4 border border-amber-100">
-                            <div className="text-xs font-bold uppercase tracking-wide text-amber-700">
-                                Content Types
-                            </div>
-                            <div className="mt-2 text-sm font-semibold text-gray-900">
-                                {(intent?.wantedTypes?.length ? intent.wantedTypes.join(", ") : "N/A")}
+                        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                            <div className="text-xs font-bold text-white/60">Types</div>
+                            <div className="mt-2 text-sm font-semibold text-white/90">
+                                {data?.intent?.wantedTypes?.length ? data.intent.wantedTypes.join(", ") : "N/A"}
                             </div>
                         </div>
 
-                        <div className="rounded-2xl bg-gradient-to-br from-amber-50 to-yellow-50 p-4 border border-amber-100">
-                            <div className="text-xs font-bold uppercase tracking-wide text-amber-700">
-                                Tags
-                            </div>
-                            <div className="mt-2 text-sm font-semibold text-gray-900">
-                                {(intent?.wantedTags?.length ? intent.wantedTags.join(", ") : "N/A")}
+                        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                            <div className="text-xs font-bold text-white/60">Tags</div>
+                            <div className="mt-2 text-sm font-semibold text-white/90">
+                                {data?.intent?.wantedTags?.length ? data.intent.wantedTags.join(", ") : "N/A"}
                             </div>
                         </div>
 
-                        <div className="rounded-2xl bg-gradient-to-br from-amber-50 to-yellow-50 p-4 border border-amber-100">
-                            <div className="text-xs font-bold uppercase tracking-wide text-amber-700">
-                                Max Ad Ratio
-                            </div>
-                            <div className="mt-2 text-lg font-bold text-gray-900">
-                                {intent?.maxAdRatio ?? "N/A"}
+                        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                            <div className="text-xs font-bold text-white/60">Max Ad Ratio</div>
+                            <div className="mt-2 text-lg font-extrabold">
+                                {data?.intent?.maxAdRatio ?? "N/A"}
                             </div>
                         </div>
                     </div>
+
+                    {data?.errorMessage && (
+                        <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                            {data.errorMessage}
+                        </div>
+                    )}
                 </section>
 
+                {/* Results */}
                 <section>
-                    <div className="mb-4">
-                        <h2 className="text-xl font-bold text-gray-900">Matched Influencers</h2>
-                        <p className="text-sm text-gray-600">Ranked by relevance score</p>
+                    <div className="mb-4 flex items-end justify-between">
+                        <div>
+                            <h2 className="text-xl font-bold">Matched Influencers</h2>
+                            <p className="text-sm text-white/60">
+                                {data?.status === "DONE" ? "Ranked by relevance score" : "Scout is processing…"}
+                            </p>
+                        </div>
+                        <div className="text-sm text-white/60">
+                            {data?.status === "DONE" ? `${results.length} results` : ""}
+                        </div>
                     </div>
 
                     <div className="grid gap-5 lg:grid-cols-2">
                         {results.map((r, idx) => (
-                            <div
+                            <Link
                                 key={r.username}
-                                className="group rounded-3xl border border-amber-200/50 bg-white p-6 shadow-lg shadow-amber-500/5 transition-all hover:border-amber-300 hover:shadow-xl hover:shadow-amber-500/10"
+                                href={`/workplace/scouts/${encodeURIComponent(scoutId)}/influencers/${encodeURIComponent(r.username)}`}
+                                className="block rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/30 hover:bg-white/7 transition"
                             >
-                                <div className="flex items-start justify-between gap-4">
-                                    <div className="flex-1">
-                                        <div className="mb-2 inline-block rounded-lg bg-gradient-to-r from-amber-400 to-yellow-500 px-2.5 py-0.5 text-xs font-bold text-white">
-                                            #{idx + 1}
+                                <div
+                                    key={r.username}
+                                    className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/30 hover:bg-white/7 transition"
+                                >
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div className="flex-1">
+                                            <div className="inline-flex items-center gap-2">
+                      <span className="inline-flex rounded-lg bg-amber-400 px-2.5 py-0.5 text-xs font-extrabold text-neutral-950">
+                        #{idx + 1}
+                      </span>
+                                                {r.badges?.slice(0, 3).map((b) => (
+                                                    <span
+                                                        key={b}
+                                                        className="inline-flex rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-white/80"
+                                                    >
+                          {b}
+                        </span>
+                                                ))}
+                                            </div>
+
+                                            <div className="mt-2 text-2xl font-extrabold">
+                                                @{r.username}
+                                            </div>
+
+                                            <div className="mt-2 text-sm text-white/70">
+                                                <span className="font-semibold text-white/90">{formatNum(r.followersCount)}</span>{" "}
+                                                followers
+                                            </div>
+
+                                            {r.evidencePostIds?.length ? (
+                                                <div className="mt-3 flex flex-wrap gap-2">
+                                                    {r.evidencePostIds.slice(0, 6).map((id) => (
+                                                        <span
+                                                            key={id}
+                                                            className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[11px] text-white/70 font-mono"
+                                                        >
+                            {id}
+                          </span>
+                                                    ))}
+                                                </div>
+                                            ) : null}
                                         </div>
-                                        <div className="text-2xl font-bold text-gray-900">
-                                            @{r.username}
-                                        </div>
-                                        <div className="mt-2 flex items-center gap-2 text-sm text-gray-600">
-                                            <svg className="h-4 w-4 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
-                                                <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
-                                            </svg>
-                                            <span className="font-semibold text-gray-900">{formatNum(r.followersCount)}</span>
-                                            <span>followers</span>
+
+                                        <div className="rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-500 px-5 py-4 text-center shadow-lg shadow-amber-500/20">
+                                            <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-950/70">
+                                                Score
+                                            </div>
+                                            <div className="mt-1 text-2xl font-extrabold text-neutral-950">
+                                                {Number(r.score).toFixed(2)}
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <div className="flex-shrink-0 rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-500 px-5 py-4 text-center shadow-lg shadow-amber-500/30">
-                                        <div className="text-[10px] font-bold uppercase tracking-wider text-white/80">
-                                            Score
+                                    <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
+                                        <div className="mb-2 text-xs font-bold uppercase tracking-wide text-white/60">
+                                            Reasons
                                         </div>
-                                        <div className="mt-1 text-2xl font-bold text-white">
-                                            {r.score.toFixed(3)}
-                                        </div>
+                                        <ul className="space-y-2">
+                                            {r.reasons?.map((reason, i) => (
+                                                <li key={i} className="text-sm text-white/80">
+                                                    • {reason}
+                                                </li>
+                                            ))}
+                                        </ul>
                                     </div>
                                 </div>
-
-                                <div className="mt-5 rounded-2xl bg-gray-50 p-4">
-                                    <div className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-600">
-                                        Match Reasons
-                                    </div>
-                                    <ul className="space-y-2">
-                                        {r.reasons?.map((reason, i) => (
-                                            <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                                                <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
-                                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                                </svg>
-                                                <span>{reason}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            </div>
+                            </Link>
                         ))}
                     </div>
-                </section>
 
-                <p className="mt-8 text-center text-xs text-gray-500">
-                    * Demo uses synthetic data to showcase the pipeline
-                </p>
+                    <p className="mt-8 text-center text-xs text-white/40">
+                        * Demo uses synthetic data to showcase the pipeline
+                    </p>
+                </section>
             </div>
         </main>
     );
